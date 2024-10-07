@@ -1,71 +1,119 @@
-# ML Challenge Problem Statement
+# ML Challenge Solution
 
-## Feature Extraction from Images
+Code Documentation: Entity Information Extraction from Images using PaddleOCR
+Overview:
+This Python code processes images to extract specific entity values such as "item weight", "item volume", "voltage", etc., using Optical Character Recognition (OCR) and regex matching. The images are fetched from URLs provided in a CSV file, preprocessed to improve OCR accuracy, and the extracted information is saved back to a CSV file.
+Modules Used:
+Pandas (pd): For handling CSV file operations and dataframes.
+Requests: To download images from the web using URLs.
+Pillow (PIL): To manipulate and preprocess images.
+NumPy (np): For numerical operations on images.
+OpenCV (cv2): Used for image processing tasks like thresholding and blurring.
+PaddleOCR: OCR tool used to extract text from images.
+Regex (re): To define patterns for extracting specific entity information.
+Logging: To provide detailed debug information throughout the process.
 
-In this hackathon, the goal is to create a machine learning model that extracts entity values from images. This capability is crucial in fields like healthcare, e-commerce, and content moderation, where precise product information is vital. As digital marketplaces expand, many products lack detailed textual descriptions, making it essential to obtain key details directly from images. These images provide important information such as weight, volume, voltage, wattage, dimensions, and many more, which are critical for digital stores.
+Key Components:
+1. Unit Normalization:
+A unit_normalization_map standardises unit representations in the text extracted from images. For instance, "kg" is normalised to "kilogram", "lb" to "pound", etc. This ensures consistent units for later processing as only certain units are allowed in the final test_out csv file.
+CODE: 
+unit_normalization_map = {
+    'g': 'gram', 'kg': 'kilogram', 'lbs': 'pound', 'ml': 'milliliter', 
+    'v': 'volt', 'w': 'watt', 'cm': 'centimeter', 'm': 'meter'
+}
 
-### Data Description: 
+2. Reading the CSV:
+The read_csv function from the Pandas reads the input CSV file containing URLs of images and the corresponding entity names. It reads all the image_links and thus downloads and processes the images and thus gets them ready for the PaddleOCR.
+CODE:
+def read_csv(file_path):
+    return pd.read_csv(file_path)
 
-The dataset consists of the following columns: 
+3. Image Preprocessing:
+To improve OCR accuracy, images are preprocessed with several steps:
+Resize: Enlarge the image to make the text clearer.
+Contrast Enhancement: Improves visibility of text.
+Binarisation: Converts the image to black-and-white for cleaner text extraction.
+Denoising: Reduces noise in the image using Gaussian blur.
+Adaptive Thresholding: Applies a more dynamic threshold to improve text visibility.
+CODE: 
+def preprocess_image(image):
+    image = resize_image(image)
+    image = enhance_contrast(image)
+    image = binarize_image(image)
+    image = denoise_image(image)
+    image = adaptive_threshold(image)
+    return image
 
-1. **index:** An unique identifier (ID) for the data sample
-2. **image_link**: Public URL where the product image is available for download. Example link - https://m.media-amazon.com/images/I/71XfHPR36-L.jpg
-    To download images use `download_images` function from `src/utils.py`. See sample code in `src/test.ipynb`.
-3. **group_id**: Category code of the product
-4. **entity_name:** Product entity name. For eg: “item_weight” 
-5. **entity_value:** Product entity value. For eg: “34 gram” 
-    Note: For test.csv, you will not see the column `entity_value` as it is the target variable.
+4. OCR with PaddleOCR:
+The ocr_paddleocr function uses PaddleOCR to extract text from preprocessed images. This function processes each image, extracts the text in blocks, and returns the extracted text in a structured format. It is used for improved accuracy over EasyOCR and Pytesseract.
+CODE:
+def ocr_paddleocr(image, ocr_instance):
+    result = ocr_instance.ocr(np.array(image), cls=True)
+    ...
+    extracted_text_str = "\n".join(extracted_text)
+    return extracted_text_str if extracted_text else ""
 
-### Output Format:
+5. Regex for Entity Extraction:
+Each entity (e.g., weight, volume, voltage) has a corresponding regular expression pattern for extracting numerical values and units. These regular expressions are mainly used to search for the relevant information asked in the “entity_name” and contain the relevant units. For example, the pattern for extracting "item_weight" is defined as follows: 
+CODE:
+regex_patterns = {
+    'item_weight': r'(\d+(?:\.\d+)?)\s*(g|kg|lb?|ounce|gram|pound?)',
+    'voltage': r'(\d+(?:\.\d+)?)\s*(v|volt|mv|millivolt)'
+}
 
-The output file should be a csv with 2 columns:
+The extract_info function runs the OCR, applies the regex pattern based on the entity name, and extracts the matched value and unit.
+6. Predictions and Saving Results:
+The predict_and_save function iterates over the rows in the CSV, fetching images, running OCR, and applying regex to extract relevant information. The extracted data is appended to a list, which is then saved to an output CSV file.
+CODE:
+def predict_and_save(csv_data, output_file_path, ocr_instance):
+    predictions = []
+    cache = {}  # Caches OCR results to avoid redundant processing
+    for index, row in csv_data.iterrows():
+        image_url = row['image_link']
+        entity_name = row['entity_name']
+        predicted_value = extract_info(image_url, entity_name, ocr_instance, cache)
+        predictions.append({'index': index, 'prediction': predicted_value})
+    
+    predictions_df = pd.DataFrame(predictions)
+    predictions_df.to_csv(output_file_path, index=False)
 
-1. **index:** The unique identifier (ID) of the data sample. Note the index should match the test record index.
-2. **prediction:** A string which should have the following format: “x unit” where x is a float number in standard formatting and unit is one of the allowed units (allowed units are mentioned in the Appendix). The two values should be concatenated and have a space between them. For eg: “2 gram”, “12.5 centimetre”, “2.56 ounce” are valid. Few invalid cases: “2 gms”, “60 ounce/1.7 kilogram”, “2.2e2 kilogram” etc.
-    Note: Make sure to output a prediction for all indices. If no value is found in the image for any test sample, return empty string, i.e, `“”`. If you have less/more number of output samples in the output file as compared to test.csv, your output won’t be evaluated. 
 
-### File Descriptions:
+Detailed Walkthrough of Functions:
+normalize_unit(unit):
+Uses a dictionary to convert shorthand unit representations (like kg, g, etc.) into their full forms (kilogram, gram, etc.).
+format_value(value):
+Keeps the extracted numeric value in the correct format without modifying it.
+Image Preprocessing Functions:
+resize_image(): Enlarges the image for better OCR results.
+enhance_contrast(): Boosts image contrast.
+binarize_image(): Converts the image to black and white.
+denoise_image(): Removes noise using Gaussian blur.
+adaptive_threshold(): Applies dynamic thresholding to improve text clarity.
+OCR Functions:
+ocr_paddleocr(): Calls PaddleOCR to extract text from an image.
+run_ocr(): Preprocesses the image, performs OCR, and extracts text.
+Main Prediction Function:
+extract_info(): Fetches the image from a URL, preprocesses it, performs OCR, and uses regex to extract specific entity information (like weight or voltage).
 
-*source files*
+Logging:
+Logging is used extensively to provide detailed information on each step of the process. This helps in debugging and tracking the flow of the program, such as loading images, normalizing units, and performing OCR.
+CODE:
+logging.info("Preprocessing image for OCR")
+logging.debug(f"Normalized unit '{unit}' to '{normalized}'")
 
-1. **src/sanity.py**: Sanity checker to ensure that the final output file passes all formatting checks. Note: the script will not check if less/more number of predictions are present compared to the test file. See sample code in `src/test.ipynb` 
-2. **src/utils.py**: Contains helper functions for downloading images from the image_link.
-3. **src/constants.py:** Contains the allowed units for each entity type.
-4. **sample_code.py:** We also provided a sample dummy code that can generate an output file in the given format. Usage of this file is optional. 
 
-*Dataset files*
+Main Execution Flow:
+Read the CSV file.
+Initialize PaddleOCR.
+Iterate over each image URL, preprocess the image, run OCR, and extract information using regex.
+Save the predictions to a new CSV file.
+CODE: 
+if __name__ == "__main__":
+    main()
 
-1. **dataset/train.csv**: Training file with labels (`entity_value`).
-2. **dataset/test.csv**: Test file without output labels (`entity_value`). Generate predictions using your model/solution on this file's data and format the output file to match sample_test_out.csv (Refer the above section "Output Format")
-3. **dataset/sample_test.csv**: Sample test input file.
-4. **dataset/sample_test_out.csv**: Sample outputs for sample_test.csv. The output for test.csv must be formatted in the exact same way. Note: The predictions in the file might not be correct
 
-### Constraints
-
-1. You will be provided with a sample output file and a sanity checker file. Format your output to match the sample output file exactly and pass it through the sanity checker to ensure its validity. Note: If the file does not pass through the sanity checker, it will not be evaluated. You should recieve a message like `Parsing successfull for file: ...csv` if the output file is correctly formatted.
-
-2. You are given the list of allowed units in constants.py and also in Appendix. Your outputs must be in these units. Predictions using any other units will be considered invalid during validation.
-
-### Evaluation Criteria
-
-Submissions will be evaluated based on F1 score, which are standard measures of prediction accuracy for classification and extraction problems.
-
-Let GT = Ground truth value for a sample and OUT be output prediction from the model for a sample. Then we classify the predictions into one of the 4 classes with the following logic: 
-
-1. *True Positives* - If OUT != `""` and GT != `""` and OUT == GT
-2. *False Positives* - If OUT != `""` and GT != `""` and OUT != GT
-3. *False Positives* - If OUT != `""` and GT == `""`
-4. *False Negatives* - If OUT == `""` and GT != `""`
-5. *True Negatives* - If OUT == `""` and GT == `""` 
-
-Then, F1 score = 2*Precision*Recall/(Precision + Recall) where:
-
-1. Precision = True Positives/(True Positives + False Positives)
-2. Recall = True Positives/(True Positives + False Negatives)
-
-### Submission File
-
-Upload a test_out.csv file in the Portal with the exact same formatting as sample_test_out.csv
+Summary:
+This Python code reads the CSV file extracts link to the images and then processes images to extract entity values using OCR. It leverages PaddleOCR for text extraction, preprocesses images for better accuracy, and uses regular expressions to identify specific patterns. The results are then stored in a CSV file, making it useful for automating the extraction of structured data from images.
 
 ### Appendix
 
